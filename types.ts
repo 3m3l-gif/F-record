@@ -24,14 +24,21 @@ export interface Transaction {
   amount: number;
   date: string;
   memo: string;
-  categoryId?: string; // Not needed for Transfer
-  accountId?: string;  // For Income/Expense
-  fromAccountId?: string; // For Transfer
-  toAccountId?: string;   // For Transfer
+  categoryId?: string;
+  accountId?: string;
+  fromAccountId?: string;
+  toAccountId?: string;
+}
+
+export interface CloudConfig {
+  dbUrl: string;
+  apiKey: string;
+  isEnabled: boolean;
 }
 
 export interface AppData {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
+  cloudConfig?: CloudConfig;
 }

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -11,9 +11,13 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  History
+  History,
+  Cloud,
+  CloudCheck,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
-import { AppData, Transaction, Category, Account, TransactionType } from './types';
+import { AppData, Transaction, Category, Account, TransactionType, CloudConfig } from './types';
 import Dashboard from './components/Dashboard';
 import IncomeForm from './components/IncomeForm';
 import ExpenseForm from './components/ExpenseForm';
@@ -33,15 +37,54 @@ const INITIAL_DATA: AppData = {
     { id: 'c2', name: '식비', type: TransactionType.EXPENSE, color: '#f59e0b' },
     { id: 'c3', name: '교통', type: TransactionType.EXPENSE, color: '#3b82f6' }
   ],
-  transactions: []
+  transactions: [],
+  cloudConfig: { dbUrl: '', apiKey: '', isEnabled: false }
 };
 
-interface NavigationProps {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
-}
+const CloudService = {
+  fetchData: async (config?: CloudConfig): Promise<AppData> => {
+    if (config?.isEnabled && config.dbUrl) {
+      try {
+        const response = await fetch(config.dbUrl, {
+          headers: { 
+            'Authorization': `Bearer ${config.apiKey}`,
+            'x-api-key': config.apiKey,
+            'Content-Type': 'application/json' 
+          }
+        });
+        if (response.ok) {
+          const cloudData = await response.json();
+          if (cloudData?.transactions) return cloudData;
+        }
+      } catch (e) {
+        console.warn("Cloud fetch error, using local data");
+      }
+    }
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : INITIAL_DATA;
+  },
+  saveData: async (data: AppData): Promise<void> => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const config = data.cloudConfig;
+    if (config?.isEnabled && config.dbUrl) {
+      try {
+        await fetch(config.dbUrl, {
+          method: 'PUT',
+          headers: { 
+            'Authorization': `Bearer ${config.apiKey}`,
+            'x-api-key': config.apiKey,
+            'Content-Type': 'application/json' 
+          },
+          body: JSON.stringify(data)
+        });
+      } catch (e) {
+        console.error("Cloud auto-save error");
+      }
+    }
+  }
+};
 
-const Navigation: React.FC<NavigationProps> = ({ isOpen, setIsOpen }) => {
+const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; isSyncing: boolean; cloudEnabled: boolean; }> = ({ isOpen, setIsOpen, isSyncing, cloudEnabled }) => {
   const location = useLocation();
   const navItems = [
     { path: '/', label: '대시보드', icon: LayoutDashboard },
@@ -49,29 +92,24 @@ const Navigation: React.FC<NavigationProps> = ({ isOpen, setIsOpen }) => {
     { path: '/income', label: '수입 입력', icon: PlusCircle },
     { path: '/expense', label: '지출/이체 입력', icon: MinusCircle },
     { path: '/manage', label: '분류 관리', icon: Settings },
-    { path: '/backup', label: '백업/복구', icon: Download },
+    { path: '/backup', label: '데이터/클라우드', icon: Download },
   ];
 
   return (
     <>
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 sticky top-0 z-50">
+      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b sticky top-0 z-50">
         <h1 className="text-lg font-bold text-indigo-600">Smart Ledger</h1>
-        <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-slate-600">
-          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-3">
+          {isSyncing ? <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" /> : 
+           cloudEnabled ? <CloudCheck className="w-4 h-4 text-emerald-500" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+          <button onClick={() => setIsOpen(!isOpen)}><Menu className="w-6 h-6 text-slate-600" /></button>
+        </div>
       </div>
 
-      <nav className={`
-        fixed inset-y-0 left-0 bg-white border-r border-slate-200 z-50 transition-all duration-300 ease-in-out
-        ${isOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-20 md:translate-x-0'}
-        overflow-hidden flex flex-col
-      `}>
-        <div className={`p-6 mb-4 flex items-center justify-between ${!isOpen && 'md:justify-center'}`}>
-          <h1 className={`text-xl font-bold text-indigo-600 whitespace-nowrap ${!isOpen && 'md:hidden'}`}>Smart Ledger Pro</h1>
-          <button 
-            onClick={() => setIsOpen(!isOpen)} 
-            className="hidden md:flex p-1.5 hover:bg-slate-100 rounded-lg text-slate-400"
-          >
+      <nav className={`fixed inset-y-0 left-0 bg-white border-r z-50 transition-all duration-300 ${isOpen ? 'w-64' : 'w-0 md:w-20'} overflow-hidden flex flex-col`}>
+        <div className="p-6 mb-4 flex items-center justify-between">
+          <h1 className={`text-xl font-bold text-indigo-600 ${!isOpen && 'hidden'}`}>Smart Ledger</h1>
+          <button onClick={() => setIsOpen(!isOpen)} className="hidden md:block p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
             {isOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
           </button>
         </div>
@@ -82,103 +120,76 @@ const Navigation: React.FC<NavigationProps> = ({ isOpen, setIsOpen }) => {
             const isActive = location.pathname === item.path;
             return (
               <li key={item.path}>
-                <Link
-                  to={item.path}
-                  onClick={() => window.innerWidth < 768 && setIsOpen(false)}
-                  className={`flex items-center p-3 rounded-xl transition-all ${
-                    isActive 
-                    ? 'bg-indigo-50 text-indigo-600 font-semibold' 
-                    : 'text-slate-500 hover:bg-slate-50'
-                  } ${!isOpen && 'md:justify-center'}`}
-                  title={!isOpen ? item.label : ''}
-                >
-                  <Icon className={`w-5 h-5 ${isOpen ? 'mr-3' : 'md:mr-0'}`} />
-                  <span className={`text-sm whitespace-nowrap transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 md:hidden'}`}>
-                    {item.label}
-                  </span>
+                <Link to={item.path} onClick={() => window.innerWidth < 768 && setIsOpen(false)}
+                  className={`flex items-center p-3 rounded-xl transition-colors ${isActive ? 'bg-indigo-50 text-indigo-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <Icon className={`w-5 h-5 ${isOpen ? 'mr-3' : 'mx-auto'}`} />
+                  {isOpen && <span className="text-sm">{item.label}</span>}
                 </Link>
               </li>
             );
           })}
         </ul>
 
-        <div className={`p-4 border-t border-slate-50 flex items-center ${!isOpen ? 'justify-center' : 'space-x-2'}`}>
-          <div className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </div>
-          <span className={`text-[10px] text-slate-400 font-medium whitespace-nowrap ${!isOpen && 'hidden'}`}>
-            브라우저 캐시 자동 저장 중
-          </span>
+        <div className={`p-4 border-t flex items-center gap-2 ${!isOpen && 'justify-center'}`}>
+          {isSyncing ? <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" /> : 
+           cloudEnabled ? <CloudCheck className="w-4 h-4 text-emerald-500" /> : <Cloud className="w-4 h-4 text-slate-300" />}
+          {isOpen && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+            {isSyncing ? 'Syncing...' : cloudEnabled ? 'Cloud Enabled' : 'Local Mode'}
+          </span>}
         </div>
       </nav>
-
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {isOpen && <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 md:hidden" onClick={() => setIsOpen(false)} />}
     </>
   );
 };
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : INITIAL_DATA;
-  });
-
+  const [data, setData] = useState<AppData | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    (async () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const initial = stored ? JSON.parse(stored) : INITIAL_DATA;
+      const finalData = await CloudService.fetchData(initial.cloudConfig);
+      setData(finalData);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (data) {
+      setIsSyncing(true);
+      const timer = setTimeout(() => {
+        CloudService.saveData(data).finally(() => setIsSyncing(false));
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
   }, [data]);
 
-  const addTransaction = (transaction: Transaction) => {
-    setData(prev => ({
-      ...prev,
-      transactions: [transaction, ...prev.transactions]
-    }));
-  };
-
+  const addTransaction = (t: Transaction) => setData(p => p ? ({ ...p, transactions: [t, ...p.transactions] }) : p);
   const deleteTransaction = (id: string) => {
-    if (confirm("이 기록을 삭제하시겠습니까?")) {
-      setData(prev => ({
-        ...prev,
-        transactions: prev.transactions.filter(t => t.id !== id)
-      }));
+    if (confirm("삭제하시겠습니까?")) {
+      setData(p => p ? ({ ...p, transactions: p.transactions.filter(t => t.id !== id) }) : p);
     }
   };
+  const updateSettings = (categories: Category[], accounts: Account[]) => setData(p => p ? ({ ...p, categories, accounts }) : p);
+  const updateCloudConfig = (cloudConfig: CloudConfig) => setData(p => p ? ({ ...p, cloudConfig }) : p);
 
-  const updateSettings = (categories: Category[], accounts: Account[]) => {
-    setData(prev => ({
-      ...prev,
-      categories,
-      accounts
-    }));
-  };
-
-  const handleRestore = (restoredData: AppData) => {
-    setData(restoredData);
-  };
+  if (!data) return <div className="h-screen flex items-center justify-center"><RefreshCw className="w-8 h-8 animate-spin text-indigo-600" /></div>;
 
   return (
     <HashRouter>
-      <div className="flex flex-col md:flex-row min-h-screen bg-slate-50">
-        <Navigation isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
-        
-        <main className={`
-          flex-1 p-4 md:p-8 overflow-y-auto max-h-screen transition-all duration-300
-          ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}
-        `}>
+      <div className="flex min-h-screen bg-slate-50">
+        <Navigation isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} isSyncing={isSyncing} cloudEnabled={data.cloudConfig?.isEnabled || false} />
+        <main className={`flex-1 p-4 md:p-8 transition-all duration-300 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
           <Routes>
             <Route path="/" element={<Dashboard data={data} />} />
             <Route path="/records" element={<RecordsView data={data} onDelete={deleteTransaction} />} />
             <Route path="/income" element={<IncomeForm accounts={data.accounts} categories={data.categories.filter(c => c.type === TransactionType.INCOME)} onSave={addTransaction} />} />
             <Route path="/expense" element={<ExpenseForm accounts={data.accounts} categories={data.categories.filter(c => c.type === TransactionType.EXPENSE)} onSave={addTransaction} />} />
             <Route path="/manage" element={<CategoryManager categories={data.categories} accounts={data.accounts} onUpdate={updateSettings} />} />
-            <Route path="/backup" element={<BackupManager data={data} onRestore={handleRestore} />} />
+            <Route path="/backup" element={<BackupManager data={data} onRestore={setData} onUpdateCloudConfig={updateCloudConfig} />} />
           </Routes>
         </main>
       </div>

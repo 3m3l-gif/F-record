@@ -66,14 +66,12 @@ const RecordsView: React.FC<RecordsViewProps> = ({ data, onDelete }) => {
       return (curr[1] > (prev?.[1] || 0)) ? curr : prev;
     }, null as [string, number] | null);
 
-const finalFiltered = filteredByMonth.filter(t => {
-  const matchesType = filterType === 'ALL' || t.type === filterType;
-  const matchesSearch = t.memo.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                      (data.categories.find(c => c.id === t.categoryId)?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
-  return matchesType && matchesSearch;
-}) // 1. 여기서 세미콜론(;)을 뺍니다.
-.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // 2. 이 줄을 새로 추가합니다.
-
+    const finalFiltered = filteredByMonth.filter(t => {
+      const matchesType = filterType === 'ALL' || t.type === filterType;
+      const matchesSearch = t.memo.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (data.categories.find(c => c.id === t.categoryId)?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesType && matchesSearch;
+    });
 
     return { income, expense, topCategory, transactions: finalFiltered };
   }, [data, selectedYear, selectedMonth, filterType, searchTerm]);
