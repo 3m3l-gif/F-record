@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-// Firebase 도구 가져오기
+// Firebase
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, onValue, set } from "firebase/database";
 // 아이콘 및 타입
 import { 
-  LayoutDashboard, History, PlusCircle, MinusCircle, Settings, Download,
-  ChevronLeft, ChevronRight, CloudCheck, RefreshCw 
+  LayoutDashboard, PlusCircle, MinusCircle, Settings, Download, 
+  Menu, ChevronLeft, ChevronRight, History, CloudCheck, RefreshCw 
 } from 'lucide-react';
-import { AppData, TransactionType, Transaction, Category, Account } from './types';
-// 컴포넌트
+import { AppData, Transaction, Category, Account, TransactionType } from './types';
+// 컴포넌트 (사진에 있는 파일명과 정확히 일치시켰습니다)
 import Dashboard from './components/Dashboard';
-import RecordsView from './components/RecordsView';
 import IncomeForm from './components/IncomeForm';
 import ExpenseForm from './components/ExpenseForm';
 import CategoryManager from './components/CategoryManager';
 import BackupManager from './components/BackupManager';
+import RecordsView from './components/RecordsView';
 
-// 1. 사용자님의 실제 Firebase 설정
+// 1. Firebase 설정
 const firebaseConfig = {
   apiKey: "AIzaSyDVRpRHS52MafuqHZL9aM7ORo9u-oqCdRU",
   authDomain: "f-record.firebaseapp.com",
@@ -41,8 +41,8 @@ const INITIAL_DATA: AppData = {
   cloudConfig: { dbUrl: firebaseConfig.databaseURL, apiKey: firebaseConfig.apiKey, isEnabled: true }
 };
 
-// 2. 내부 Navigation 컴포넌트 (에러 방지용)
-const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; isSyncing: boolean; cloudEnabled: boolean; }> = ({ isOpen, setIsOpen, isSyncing, cloudEnabled }) => {
+// 2. Navigation 컴포넌트 (파일 경로 에러 방지를 위해 내부에 포함)
+const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; isSyncing: boolean; }> = ({ isOpen, setIsOpen, isSyncing }) => {
   const location = useLocation();
   const navItems = [
     { path: '/', label: '대시보드', icon: LayoutDashboard },
@@ -54,7 +54,7 @@ const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; i
   ];
 
   return (
-    <nav className={`fixed inset-y-0 left-0 bg-white border-r z-50 transition-all duration-300 ${isOpen ? 'w-64' : 'w-20'} flex flex-col`}>
+    <nav className={`fixed inset-y-0 left-0 bg-white border-r z-50 transition-all ${isOpen ? 'w-64' : 'w-20'} flex flex-col`}>
       <div className="p-6 flex items-center justify-between">
         {isOpen && <h1 className="text-xl font-bold text-indigo-600">Smart Ledger</h1>}
         <button onClick={() => setIsOpen(!isOpen)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400">
@@ -71,29 +71,26 @@ const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; i
           </li>
         ))}
       </ul>
-      <div className="p-4 border-t flex items-center gap-2 justify-center">
+      <div className="p-4 border-t flex justify-center">
         {isSyncing ? <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" /> : <CloudCheck className="w-4 h-4 text-emerald-500" />}
       </div>
     </nav>
   );
 };
 
-// 3. 메인 App 컴포넌트
+// 3. 메인 App
 const App: React.FC = () => {
   const [data, setData] = useState<AppData | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
 
-  // 실시간 데이터 읽기
   useEffect(() => {
-    const dataRef = ref(db, 'user_main_data');
-    const unsubscribe = onValue(dataRef, (snapshot) => {
+    const unsubscribe = onValue(ref(db, 'user_main_data'), (snapshot) => {
       setData(snapshot.val() || INITIAL_DATA);
     });
     return () => unsubscribe();
   }, []);
 
-  // 자동 저장
   useEffect(() => {
     if (data) {
       setIsSyncing(true);
@@ -105,7 +102,6 @@ const App: React.FC = () => {
     }
   }, [data]);
 
-  // 기능 함수 정의
   const addTransaction = (t: Transaction) => setData(p => p ? ({ ...p, transactions: [t, ...p.transactions] }) : p);
   const deleteTransaction = (id: string) => {
     if (confirm("삭제하시겠습니까?")) {
@@ -114,13 +110,13 @@ const App: React.FC = () => {
   };
   const updateSettings = (categories: Category[], accounts: Account[]) => setData(p => p ? ({ ...p, categories, accounts }) : p);
 
-  if (!data) return <div className="h-screen flex items-center justify-center font-bold">데이터 연결 중...</div>;
+  if (!data) return <div className="h-screen flex items-center justify-center font-bold">데이터 불러오는 중...</div>;
 
   return (
     <HashRouter>
       <div className="flex min-h-screen bg-slate-50">
-        <Navigation isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} isSyncing={isSyncing} cloudEnabled={true} />
-        <main className={`flex-1 p-4 md:p-8 transition-all duration-300 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
+        <Navigation isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} isSyncing={isSyncing} />
+        <main className={`flex-1 p-4 md:p-8 transition-all ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
           <Routes>
             <Route path="/" element={<Dashboard data={data} />} />
             <Route path="/records" element={<RecordsView data={data} onDelete={deleteTransaction} />} />
