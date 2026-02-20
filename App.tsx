@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { 
@@ -34,6 +33,11 @@ const INITIAL_DATA: AppData = {
     { id: 'c3', name: '교통', type: TransactionType.EXPENSE, color: '#3b82f6' }
   ],
   transactions: []
+};
+
+// 1. 최신순 정렬을 위한 계산기 함수
+const sortTransactions = (list: Transaction[]) => {
+  return [...list].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
 
 const Navigation: React.FC<{ isOpen: boolean; setIsOpen: (v: boolean) => void; }> = ({ isOpen, setIsOpen }) => {
@@ -96,9 +100,18 @@ const App: React.FC = () => {
   const [data, setData] = useState<AppData | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
 
+  // 2. 데이터 불러올 때 최신순 정렬 적용
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    setData(stored ? JSON.parse(stored) : INITIAL_DATA);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setData({
+        ...parsed,
+        transactions: sortTransactions(parsed.transactions || [])
+      });
+    } else {
+      setData(INITIAL_DATA);
+    }
   }, []);
 
   useEffect(() => {
@@ -107,12 +120,21 @@ const App: React.FC = () => {
     }
   }, [data]);
 
-  const addTransaction = (t: Transaction) => setData(p => p ? ({ ...p, transactions: [t, ...p.transactions] }) : p);
+  // 3. 기록 추가할 때 최신순 정렬 유지
+  const addTransaction = (t: Transaction) => setData(p => {
+    if (!p) return p;
+    return {
+      ...p,
+      transactions: sortTransactions([t, ...p.transactions])
+    };
+  });
+
   const deleteTransaction = (id: string) => {
-    if (confirm("삭제하시겠습니까?")) {
+    if (window.confirm("삭제하시겠습니까?")) {
       setData(p => p ? ({ ...p, transactions: p.transactions.filter(t => t.id !== id) }) : p);
     }
   };
+
   const updateSettings = (categories: Category[], accounts: Account[]) => setData(p => p ? ({ ...p, categories, accounts }) : p);
 
   if (!data) return null;
